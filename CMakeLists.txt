@@ -25,7 +25,7 @@ link_directories(${FFMPEG_BUILD}/libswscale)
 
 find_package(Torch REQUIRED PATHS ~/libtorch-1.8.1)
 
-set(CMAKE_CXX_FLAGS   "-fpermissive -w")
+set(CMAKE_CXX_FLAGS   "-fpermissive -w -g")
 
 aux_source_directory(. DIR_SRCS)
 

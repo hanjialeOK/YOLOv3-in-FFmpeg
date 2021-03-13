@@ -50,6 +50,7 @@ extern "C"
 #include "libavutil/avassert.h"
 #include "libavutil/time.h"
 #include "libavutil/bprint.h"
+#include "libavutil/colorspace.h"
 #include "libavformat/avformat.h"
 #include "libavdevice/avdevice.h"
 #include "libswscale/swscale.h"
@@ -321,6 +322,19 @@ typedef struct VideoState {
 
     SDL_cond *continue_read_thread;
 } VideoState;
+
+typedef struct MyDrawBoxContext {
+    int x, y, w, h;
+    int thickness;
+    char *color_str;
+    unsigned char dst_color[4];
+    int vsub, hsub;   ///< chroma subsampling
+    int have_alpha;
+    int is_packed_rgba;
+} MyDrawBoxContext;
+
+enum { Y, U, V, A };
+enum { RED = 0, GREEN, BLUE, ALPHA };
 
 #define SHOW_MODE_NONE VideoState::ShowMode::SHOW_MODE_NONE
 #define SHOW_MODE_VIDEO VideoState::ShowMode::SHOW_MODE_VIDEO
@@ -937,6 +951,165 @@ static void get_sdl_pix_fmt_and_blendmode(int format, Uint32 *sdl_pix_fmt, SDL_B
     }
 }
 
+/* copy from libavfilter/drawutils.c */
+int my_ff_fill_rgba_map(uint8_t *rgba_map, enum AVPixelFormat pix_fmt)
+{
+    switch (pix_fmt) {
+    case AV_PIX_FMT_0RGB:
+    case AV_PIX_FMT_ARGB:  rgba_map[ALPHA] = 0; rgba_map[RED  ] = 1; rgba_map[GREEN] = 2; rgba_map[BLUE ] = 3; break;
+    case AV_PIX_FMT_0BGR:
+    case AV_PIX_FMT_ABGR:  rgba_map[ALPHA] = 0; rgba_map[BLUE ] = 1; rgba_map[GREEN] = 2; rgba_map[RED  ] = 3; break;
+    case AV_PIX_FMT_RGB48LE:
+    case AV_PIX_FMT_RGB48BE:
+    case AV_PIX_FMT_RGBA64BE:
+    case AV_PIX_FMT_RGBA64LE:
+    case AV_PIX_FMT_RGB0:
+    case AV_PIX_FMT_RGBA:
+    case AV_PIX_FMT_RGB24: rgba_map[RED  ] = 0; rgba_map[GREEN] = 1; rgba_map[BLUE ] = 2; rgba_map[ALPHA] = 3; break;
+    case AV_PIX_FMT_BGR48LE:
+    case AV_PIX_FMT_BGR48BE:
+    case AV_PIX_FMT_BGRA64BE:
+    case AV_PIX_FMT_BGRA64LE:
+    case AV_PIX_FMT_BGRA:
+    case AV_PIX_FMT_BGR0:
+    case AV_PIX_FMT_BGR24: rgba_map[BLUE ] = 0; rgba_map[GREEN] = 1; rgba_map[RED  ] = 2; rgba_map[ALPHA] = 3; break;
+    case AV_PIX_FMT_GBRP9LE:
+    case AV_PIX_FMT_GBRP9BE:
+    case AV_PIX_FMT_GBRP10LE:
+    case AV_PIX_FMT_GBRP10BE:
+    case AV_PIX_FMT_GBRP12LE:
+    case AV_PIX_FMT_GBRP12BE:
+    case AV_PIX_FMT_GBRP14LE:
+    case AV_PIX_FMT_GBRP14BE:
+    case AV_PIX_FMT_GBRP16LE:
+    case AV_PIX_FMT_GBRP16BE:
+    case AV_PIX_FMT_GBRAP:
+    case AV_PIX_FMT_GBRAP10LE:
+    case AV_PIX_FMT_GBRAP10BE:
+    case AV_PIX_FMT_GBRAP12LE:
+    case AV_PIX_FMT_GBRAP12BE:
+    case AV_PIX_FMT_GBRAP16LE:
+    case AV_PIX_FMT_GBRAP16BE:
+    case AV_PIX_FMT_GBRP:  rgba_map[GREEN] = 0; rgba_map[BLUE ] = 1; rgba_map[RED  ] = 2; rgba_map[ALPHA] = 3; break;
+    default:                    /* unsupported */
+        return AVERROR(EINVAL);
+    }
+    return 0;
+}
+
+/* adapted from libavfilter/vf_drawbox.c, drawutils.c */
+static av_cold int my_init(MyDrawBoxContext *s, enum AVPixelFormat pix_fmt)
+{
+    uint8_t rgba_color[4] = {0};
+    uint8_t rgba_map[4] = {0};
+
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(pix_fmt);
+    s->color_str = "red";
+    s->hsub = desc->log2_chroma_w;
+    s->vsub = desc->log2_chroma_h;
+    s->have_alpha = desc->flags & AV_PIX_FMT_FLAG_ALPHA;
+    s->thickness = 3;
+
+    if (av_parse_color(rgba_color, s->color_str, -1, s) < 0)
+        return AVERROR(EINVAL);
+
+    s->is_packed_rgba = my_ff_fill_rgba_map(rgba_map, pix_fmt) >= 0;
+
+    if (s->is_packed_rgba) {
+        for (int i = 0; i < 4; i++)
+            s->dst_color[rgba_map[i]] = rgba_color[i];
+    } else {
+        s->dst_color[Y] = RGB_TO_Y_CCIR(rgba_color[0], rgba_color[1], rgba_color[2]);
+        s->dst_color[U] = RGB_TO_U_CCIR(rgba_color[0], rgba_color[1], rgba_color[2], 0);
+        s->dst_color[V] = RGB_TO_V_CCIR(rgba_color[0], rgba_color[1], rgba_color[2], 0);
+        s->dst_color[A] = rgba_color[3];
+    }
+
+    return 0;
+}
+
+/* adapted from libavfilter/vf_drawbox.c, drawutils.c */
+static int my_filter_frame(MyDrawBoxContext *s, AVFrame *frame)
+{
+    int plane, x, y, xb = s->x, yb = s->y;
+    unsigned char *row[4];
+
+    if (s->is_packed_rgba) {
+        for (y = FFMAX(yb, 0); y < FFMIN(yb + s->h, frame->height); y++) {
+            row[0] = frame->data[0] + y * frame->linesize[0];
+            if ((y - yb < s->thickness) || (yb + s->h - 1 - y < s->thickness)) {
+                for (x = FFMAX(xb, 0); x < FFMIN(xb + s->w, frame->width); x++)
+                    memcpy(row[0] + (x << 2), s->dst_color, 4);
+            } else {
+                for (x = FFMAX(xb, 0); x < xb + s->thickness; x++)
+                    memcpy(row[0] + (x << 2), s->dst_color, 4);
+                for (x = xb + s->w - s->thickness; x < FFMIN(xb + s->w, frame->width); x++)
+                    memcpy(row[0] + (x << 2), s->dst_color, 4);
+            }
+        }
+    } else {
+        if (s->have_alpha) {
+            for (y = FFMAX(yb, 0); y < FFMIN(yb + s->h, frame->height); y++) {
+                row[0] = frame->data[0] + y * frame->linesize[0];
+                row[3] = frame->data[3] + y * frame->linesize[3];
+
+                for (plane = 1; plane < 3; plane++)
+                    row[plane] = frame->data[plane] +
+                            frame->linesize[plane] * (y >> s->vsub);
+
+                if ((y - yb < s->thickness) || (yb + s->h - 1 - y < s->thickness)) {
+                    for (x = FFMAX(xb, 0); x < FFMIN(xb + s->w, frame->width); x++) {
+                        row[0][x           ] = s->dst_color[Y];
+                        row[1][x >> s->hsub] = s->dst_color[U];
+                        row[2][x >> s->hsub] = s->dst_color[V];
+                        row[3][x           ] = s->dst_color[A];
+                    }
+                } else {
+                    for (x = FFMAX(xb, 0); x < xb + s->thickness; x++){
+                        row[0][x           ] = s->dst_color[Y];
+                        row[1][x >> s->hsub] = s->dst_color[U];
+                        row[2][x >> s->hsub] = s->dst_color[V];
+                        row[3][x           ] = s->dst_color[A];
+                    }
+                    for (x = xb + s->w - s->thickness; x < FFMIN(xb + s->w, frame->width); x++){
+                        row[0][x           ] = s->dst_color[Y];
+                        row[1][x >> s->hsub] = s->dst_color[U];
+                        row[2][x >> s->hsub] = s->dst_color[V];
+                        row[3][x           ] = s->dst_color[A];
+                    }
+                }
+            }
+        } else {
+            for (y = FFMAX(yb, 0); y < FFMIN(yb + s->h, frame->height); y++) {
+                row[0] = frame->data[0] + y * frame->linesize[0];
+
+                for (plane = 1; plane < 3; plane++)
+                    row[plane] = frame->data[plane] +
+                            frame->linesize[plane] * (y >> s->vsub);
+
+                if ((y - yb < s->thickness) || (yb + s->h - 1 - y < s->thickness)) {
+                    for (x = FFMAX(xb, 0); x < FFMIN(xb + s->w, frame->width); x++) {
+                        row[0][x           ] = s->dst_color[Y];
+                        row[1][x >> s->hsub] = s->dst_color[U];
+                        row[2][x >> s->hsub] = s->dst_color[V];
+                    }
+                } else {
+                    for (x = FFMAX(xb, 0); x < xb + s->thickness; x++){
+                        row[0][x           ] = s->dst_color[Y];
+                        row[1][x >> s->hsub] = s->dst_color[U];
+                        row[2][x >> s->hsub] = s->dst_color[V];
+                    }
+                    for (x = xb + s->w - s->thickness; x < FFMIN(xb + s->w, frame->width); x++){
+                        row[0][x           ] = s->dst_color[Y];
+                        row[1][x >> s->hsub] = s->dst_color[U];
+                        row[2][x >> s->hsub] = s->dst_color[V];
+                    }
+                }
+            }
+        }
+    }
+}
+
 static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContext **img_convert_ctx) {
     int ret = 0;
     Uint32 sdl_pix_fmt;
@@ -944,25 +1117,12 @@ static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContex
     get_sdl_pix_fmt_and_blendmode(frame->format, &sdl_pix_fmt, &sdl_blendmode);
     if (realloc_texture(tex, sdl_pix_fmt == SDL_PIXELFORMAT_UNKNOWN ? SDL_PIXELFORMAT_ARGB8888 : sdl_pix_fmt, frame->width, frame->height, sdl_blendmode, 0) < 0)
         return -1;
-
-    /* initilize frameRGB */
-    if (frameRGB == NULL) {
-        frameRGB = av_frame_alloc();
-        frameRGB->width = frame->width;
-        frameRGB->height = frame->height;
-        frameRGB->format = AV_PIX_FMT_RGB24;
-        numBytes = avpicture_get_size(frameRGB->format, frame->width, frame->height);
-        buffer = (uint8_t *)av_malloc(numBytes*sizeof(uint8_t));
-        avpicture_fill((AVPicture *)frameRGB, buffer, frameRGB->format, frameRGB->width, frameRGB->height);
-    }
     
-    /* convert to BGR24 */
+    /* convert to RGB24 */
     *img_convert_ctx = sws_getCachedContext(*img_convert_ctx,
-        frame->width, frame->height, frame->format, frame->width, frame->height,
-        frameRGB->format, sws_flags, NULL, NULL, NULL);
-    // *img_convert_ctx = sws_getContext(
-    //     frame->width, frame->height, frame->format, frame->width, frame->height,
-    //     frameRGB->format, sws_flags, NULL, NULL, NULL);
+        frame->width, frame->height, frame->format, 
+        frameRGB->width, frameRGB->height, frameRGB->format, 
+        sws_flags, NULL, NULL, NULL);
     if (*img_convert_ctx != NULL) {
         uint8_t *pixels[4];
         int pitch[4];
@@ -977,17 +1137,28 @@ static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContex
     }
 
     /* initilize cv::Mat img */
-    if (img.empty()) {
-        img.create(cv::Size(frame->width, frame->height), CV_8UC3);
-    }
+    // if (img.empty()) {
+    //     img.create(cv::Size(frameRGB->width, frameRGB->height), CV_8UC3);
+    // }
+
+    /* initilize MyDrawBoxContext draw_ctx */
+    MyDrawBoxContext draw_ctx;
+    if (my_init(&draw_ctx, frame->format) < 0)
+        av_log(NULL, AV_LOG_FATAL, "Cannot initialize MyDrawBoxContext\n");
 
     /* FFmpeg -> OpenCV */
     auto start0 = std::chrono::high_resolution_clock::now();
-    memcpy(img.data, frameRGB->data[0], numBytes*sizeof(uint8_t));
-    cv::resize(img, resized_img, cv::Size(input_image_size, input_image_size));
-    resized_img.convertTo(img_float, CV_32F, 1.0/255);
-    auto img_tensor = torch::from_blob(img_float.data, {1, input_image_size, input_image_size, 3}).to(net.device());
+    // float my_float[519168];
+    // uint8_t *row = frameRGB->data[0];
+    // for (int i = 0; i < 519168; i++) {
+    //     my_float[i] = (int)row[i] / 255.0;
+    // }
+    auto img_tensor = torch::from_blob(frameRGB->data[0], {1, input_image_size, input_image_size, 3}, torch::kByte).to(net.device());
     img_tensor = img_tensor.permute({0,3,1,2});
+    img_tensor = img_tensor.toType(torch::kFloat);
+    img_tensor = img_tensor.div(255);
+    // auto img_tensor = torch::from_blob(my_float, {1, input_image_size, input_image_size, 3}).to(net.device());
+    // img_tensor = img_tensor.permute({0,3,1,2});
     auto end0 = std::chrono::high_resolution_clock::now();
     auto duration0 = std::chrono::duration_cast<std::chrono::milliseconds>(end0 - start0);
     std::cout << "convert to float taken : " << duration0.count() << " ms" << endl;
@@ -1008,37 +1179,28 @@ static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContex
         char szFilename[32];
         sprintf(szFilename, "frame%d-detect.jpg", cnt++);
         int obj_num = result.size(0);
-        std::cout << obj_num << " objects found" << " => " << szFilename << endl;
-        float w_scale = float(img.cols) / input_image_size;
-        float h_scale = float(img.rows) / input_image_size;
+        std::cout << obj_num << " objects found" << endl;
+        // float w_scale = float(img.cols) / input_image_size;
+        // float h_scale = float(img.rows) / input_image_size;
+        float w_scale = (float)frame->width / input_image_size;
+        float h_scale = (float)frame->height / input_image_size;
         result.select(1,1).mul_(w_scale);
         result.select(1,2).mul_(h_scale);
         result.select(1,3).mul_(w_scale);
         result.select(1,4).mul_(h_scale);
         auto result_data = result.accessor<float, 2>();
         for (int i = 0; i < result.size(0) ; i++) {
-            cv::rectangle(img, cv::Point(result_data[i][1], result_data[i][2]), cv::Point(result_data[i][3], result_data[i][4]), cv::Scalar(255, 0, 0), 2, 1, 0);
+            // cv::rectangle(img, cv::Point(result_data[i][1], result_data[i][2]), cv::Point(result_data[i][3], result_data[i][4]), cv::Scalar(0, 0, 255), 1, 1, 0);
+            draw_ctx.x = (int)(result_data[i][1] + 0.5);
+            draw_ctx.y = (int)(result_data[i][2] + 0.5);
+            draw_ctx.w = (int)(result_data[i][3] - result_data[i][1] + 0.5);
+            draw_ctx.h = (int)(result_data[i][4] - result_data[i][2] + 0.5);
+
+            my_filter_frame(&draw_ctx, frame);
         }
         // cv::imwrite(szFilename, img);
     }
 
-    /* convert back */
-    memcpy(frameRGB->data[0], img.data, numBytes*sizeof(uint8_t));
-    *img_convert_ctx = sws_getCachedContext(*img_convert_ctx,
-        frameRGB->width, frameRGB->height, frameRGB->format, frame->width, frame->height,
-        frame->format, sws_flags, NULL, NULL, NULL);
-    if (*img_convert_ctx != NULL) {
-        uint8_t *pixels[4];
-        int pitch[4];
-        if (!SDL_LockTexture(*tex, NULL, (void **)pixels, pitch)) {
-            sws_scale(*img_convert_ctx, (const uint8_t * const *)frameRGB->data, frameRGB->linesize,
-                0, frameRGB->height, frame->data, frame->linesize);
-            SDL_UnlockTexture(*tex);
-        }
-    } else {
-        av_log(NULL, AV_LOG_FATAL, "Cannot initialize the conversion context\n");
-        ret = -1;
-    }
     auto end1 = std::chrono::high_resolution_clock::now();
     auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
     std::cout << "drawbox taken : " << duration1.count() << " ms" << endl;
@@ -1479,9 +1641,9 @@ static void stream_close(VideoState *is)
     av_free(is);
 
     /* free cv::Mat img */
-    img.release();
-    resized_img.release();
-    img_float.release();
+    // img.release();
+    // resized_img.release();
+    // img_float.release();
     /* free frameRGB */
     av_free(buffer);
     av_frame_free(&frameRGB);
@@ -3956,6 +4118,12 @@ int main(int argc, char **argv)
         }
     }
 
+    is = stream_open(input_filename, file_iformat);
+    if (!is) {
+        av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");
+        do_exit(NULL);
+    }
+
     /* initilize YOLO */
     torch::DeviceType device_type;
     if (torch::cuda::is_available() ) {        
@@ -3977,10 +4145,15 @@ int main(int argc, char **argv)
     torch::NoGradGuard no_grad;
     net.eval();
 
-    is = stream_open(input_filename, file_iformat);
-    if (!is) {
-        av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");
-        do_exit(NULL);
+    /* initilize frameRGB */
+    if (frameRGB == NULL) {
+        frameRGB = av_frame_alloc();
+        frameRGB->width = input_image_size;
+        frameRGB->height = input_image_size;
+        frameRGB->format = AV_PIX_FMT_RGB24;
+        numBytes = avpicture_get_size(frameRGB->format, frameRGB->width, frameRGB->height);
+        buffer = (uint8_t *)av_malloc(numBytes*sizeof(uint8_t));
+        avpicture_fill((AVPicture *)frameRGB, buffer, frameRGB->format, frameRGB->width, frameRGB->height);
     }
 
     event_loop(is);
