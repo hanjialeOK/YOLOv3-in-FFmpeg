@@ -951,18 +951,20 @@ static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContex
         frameRGB->width = frame->width;
         frameRGB->height = frame->height;
         frameRGB->format = AV_PIX_FMT_RGB24;
-        numBytes = avpicture_get_size(frameRGB->format, frame->width, frame->height);
+        numBytes = avpicture_get_size(frameRGB->format, frameRGB->width, frameRGB->height);
         buffer = (uint8_t *)av_malloc(numBytes*sizeof(uint8_t));
         avpicture_fill((AVPicture *)frameRGB, buffer, frameRGB->format, frameRGB->width, frameRGB->height);
     }
     
     /* convert to BGR24 */
     *img_convert_ctx = sws_getCachedContext(*img_convert_ctx,
-        frame->width, frame->height, frame->format, frame->width, frame->height,
-        frameRGB->format, sws_flags, NULL, NULL, NULL);
+        frame->width, frame->height, frame->format, 
+        frameRGB->width, frameRGB->height, frameRGB->format, 
+        sws_flags, NULL, NULL, NULL);
     // *img_convert_ctx = sws_getContext(
-    //     frame->width, frame->height, frame->format, frame->width, frame->height,
-    //     frameRGB->format, sws_flags, NULL, NULL, NULL);
+    //     frame->width, frame->height, frame->format, 
+    //     frameRGB->width, frameRGB->height, frameRGB->format,
+    //     sws_flags, NULL, NULL, NULL);
     if (*img_convert_ctx != NULL) {
         uint8_t *pixels[4];
         int pitch[4];
@@ -978,19 +980,15 @@ static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContex
 
     /* initilize cv::Mat img */
     if (img.empty()) {
-        img.create(cv::Size(frame->width, frame->height), CV_8UC3);
+        img.create(cv::Size(frameRGB->width, frameRGB->height), CV_8UC3);
     }
 
     /* FFmpeg -> OpenCV */
-    auto start0 = std::chrono::high_resolution_clock::now();
     memcpy(img.data, frameRGB->data[0], numBytes*sizeof(uint8_t));
     cv::resize(img, resized_img, cv::Size(input_image_size, input_image_size));
     resized_img.convertTo(img_float, CV_32F, 1.0/255);
-    auto img_tensor = torch::from_blob(img_float.data, {1, input_image_size, input_image_size, 3}).to(net.device());
+    auto img_tensor = torch::from_blob(img_float.data, {1, input_image_size, input_image_size, 3}).to(*net.device());
     img_tensor = img_tensor.permute({0,3,1,2});
-    auto end0 = std::chrono::high_resolution_clock::now();
-    auto duration0 = std::chrono::duration_cast<std::chrono::milliseconds>(end0 - start0);
-    std::cout << "convert to float taken : " << duration0.count() << " ms" << endl;
 
     auto start = std::chrono::high_resolution_clock::now();
     auto output = net.forward(img_tensor);
@@ -1000,7 +998,6 @@ static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContex
     // It should be known that it takes longer time at first time
     std::cout << "inference taken : " << duration.count() << " ms" << endl;
 
-    auto start1 = std::chrono::high_resolution_clock::now();
     if (result.dim() == 1) {
         std::cout << "no object found" << endl;
     }
@@ -1008,7 +1005,7 @@ static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContex
         char szFilename[32];
         sprintf(szFilename, "frame%d-detect.jpg", cnt++);
         int obj_num = result.size(0);
-        std::cout << obj_num << " objects found" << " => " << szFilename << endl;
+        std::cout << obj_num << " objects found" << endl;
         float w_scale = float(img.cols) / input_image_size;
         float h_scale = float(img.rows) / input_image_size;
         result.select(1,1).mul_(w_scale);
@@ -1025,8 +1022,9 @@ static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContex
     /* convert back */
     memcpy(frameRGB->data[0], img.data, numBytes*sizeof(uint8_t));
     *img_convert_ctx = sws_getCachedContext(*img_convert_ctx,
-        frameRGB->width, frameRGB->height, frameRGB->format, frame->width, frame->height,
-        frame->format, sws_flags, NULL, NULL, NULL);
+        frameRGB->width, frameRGB->height, frameRGB->format, 
+        frame->width, frame->height, frame->format, 
+        sws_flags, NULL, NULL, NULL);
     if (*img_convert_ctx != NULL) {
         uint8_t *pixels[4];
         int pitch[4];
@@ -1039,9 +1037,6 @@ static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContex
         av_log(NULL, AV_LOG_FATAL, "Cannot initialize the conversion context\n");
         ret = -1;
     }
-    auto end1 = std::chrono::high_resolution_clock::now();
-    auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
-    std::cout << "drawbox taken : " << duration1.count() << " ms" << endl;
 
     /* SDL_UpdateTexture */
     switch (sdl_pix_fmt) {
