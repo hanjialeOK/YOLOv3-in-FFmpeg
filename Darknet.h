@@ -28,7 +28,7 @@ public:
 
 	void load_weights(const char *weight_file);
 
-	torch::Device device() const;
+	torch::Device *device() const;
 
 	torch::Tensor forward(torch::Tensor x);
 

@@ -302,8 +302,8 @@ void Darknet::init(const char *cfg_file, torch::Device *device) {
 	create_modules();
 }
 
-torch::Device Darknet::device() const {
-	return *_device;
+torch::Device* Darknet::device() const {
+	return _device;
 }
 
 void Darknet::load_cfg(const char *cfg_file)
