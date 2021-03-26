@@ -1,9 +1,6 @@
 cmake_minimum_required(VERSION 3.0 FATAL_ERROR)
 project(myplay)
 
-find_package(OpenCV REQUIRED)
-include_directories(${OpenCV_INCLUDE_DIRS})
-
 find_package(SDL2 REQUIRED)
 include_directories(${SDL2_INCLUDE_DIRS})
 
@@ -32,7 +29,6 @@ aux_source_directory(. DIR_SRCS)
 add_executable(myplay ${DIR_SRCS})
 
 target_link_libraries(myplay 
-                     ${OpenCV_LIBS}
                      ${TORCH_LIBRARIES}
                      -lavcodec
                      -lavdevice

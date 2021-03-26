@@ -23,8 +23,6 @@
  * simple media player based on the FFmpeg libraries
  */
 
-#include <opencv2/opencv.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
 #include <torch/torch.h>
 #include <chrono>
 #include <time.h>
@@ -1154,7 +1152,7 @@ static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContex
             av_log(NULL, AV_LOG_FATAL, "Cannot initialize MyDrawBoxContext\n");
     }
 
-    /* FFmpeg -> OpenCV */
+    /* FFmpeg -> Torch */
     auto img_tensor = torch::from_blob(frameRGB->data[0], {1, input_image_size, input_image_size, 3}, torch::kByte).to(*net.device());
     img_tensor = img_tensor.permute({0,3,1,2});
     img_tensor = img_tensor.toType(torch::kFloat);
