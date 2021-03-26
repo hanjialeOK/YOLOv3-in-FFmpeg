@@ -3,4 +3,5 @@ build
 models
 models/
 examples
-video
+video/
+videos
