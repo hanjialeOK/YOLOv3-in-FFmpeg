@@ -342,11 +342,11 @@ enum { RED = 0, GREEN, BLUE, ALPHA };
 #define SHOW_MODE_RDFT VideoState::ShowMode::SHOW_MODE_RDFT
 #define SHOW_MODE_NB VideoState::ShowMode::SHOW_MODE_NB
 
-static cv::Mat img, resized_img, img_float;
 static AVFrame *frameRGB = NULL;
 static int numBytes = 0;
 static uint8_t *buffer = NULL;
 static Darknet net;
+static MyDrawBoxContext *draw_ctx = NULL;
 static int input_image_size = 0;
 static int cnt = 0;
 
@@ -1117,6 +1117,17 @@ static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContex
     get_sdl_pix_fmt_and_blendmode(frame->format, &sdl_pix_fmt, &sdl_blendmode);
     if (realloc_texture(tex, sdl_pix_fmt == SDL_PIXELFORMAT_UNKNOWN ? SDL_PIXELFORMAT_ARGB8888 : sdl_pix_fmt, frame->width, frame->height, sdl_blendmode, 0) < 0)
         return -1;
+
+    /* initilize frameRGB */
+    if (frameRGB == NULL) {
+        frameRGB = av_frame_alloc();
+        frameRGB->width = input_image_size;
+        frameRGB->height = input_image_size;
+        frameRGB->format = AV_PIX_FMT_RGB24;
+        numBytes = avpicture_get_size(frameRGB->format, frameRGB->width, frameRGB->height);
+        buffer = (uint8_t *)av_malloc(numBytes*sizeof(uint8_t));
+        avpicture_fill((AVPicture *)frameRGB, buffer, frameRGB->format, frameRGB->width, frameRGB->height);
+    }
     
     /* convert to RGB24 */
     *img_convert_ctx = sws_getCachedContext(*img_convert_ctx,
@@ -1136,32 +1147,18 @@ static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContex
         ret = -1;
     }
 
-    /* initilize cv::Mat img */
-    // if (img.empty()) {
-    //     img.create(cv::Size(frameRGB->width, frameRGB->height), CV_8UC3);
-    // }
-
     /* initilize MyDrawBoxContext draw_ctx */
-    MyDrawBoxContext draw_ctx;
-    if (my_init(&draw_ctx, frame->format) < 0)
-        av_log(NULL, AV_LOG_FATAL, "Cannot initialize MyDrawBoxContext\n");
+    if(draw_ctx == NULL) {
+        draw_ctx = new MyDrawBoxContext;
+        if (my_init(draw_ctx, frame->format) < 0)
+            av_log(NULL, AV_LOG_FATAL, "Cannot initialize MyDrawBoxContext\n");
+    }
 
     /* FFmpeg -> OpenCV */
-    auto start0 = std::chrono::high_resolution_clock::now();
-    // float my_float[519168];
-    // uint8_t *row = frameRGB->data[0];
-    // for (int i = 0; i < 519168; i++) {
-    //     my_float[i] = (int)row[i] / 255.0;
-    // }
-    auto img_tensor = torch::from_blob(frameRGB->data[0], {1, input_image_size, input_image_size, 3}, torch::kByte).to(net.device());
+    auto img_tensor = torch::from_blob(frameRGB->data[0], {1, input_image_size, input_image_size, 3}, torch::kByte).to(*net.device());
     img_tensor = img_tensor.permute({0,3,1,2});
     img_tensor = img_tensor.toType(torch::kFloat);
-    img_tensor = img_tensor.div(255);
-    // auto img_tensor = torch::from_blob(my_float, {1, input_image_size, input_image_size, 3}).to(net.device());
-    // img_tensor = img_tensor.permute({0,3,1,2});
-    auto end0 = std::chrono::high_resolution_clock::now();
-    auto duration0 = std::chrono::duration_cast<std::chrono::milliseconds>(end0 - start0);
-    std::cout << "convert to float taken : " << duration0.count() << " ms" << endl;
+    img_tensor = img_tensor.div(255.0);
 
     auto start = std::chrono::high_resolution_clock::now();
     auto output = net.forward(img_tensor);
@@ -1171,7 +1168,6 @@ static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContex
     // It should be known that it takes longer time at first time
     std::cout << "inference taken : " << duration.count() << " ms" << endl;
 
-    auto start1 = std::chrono::high_resolution_clock::now();
     if (result.dim() == 1) {
         std::cout << "no object found" << endl;
     }
@@ -1180,8 +1176,6 @@ static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContex
         sprintf(szFilename, "frame%d-detect.jpg", cnt++);
         int obj_num = result.size(0);
         std::cout << obj_num << " objects found" << endl;
-        // float w_scale = float(img.cols) / input_image_size;
-        // float h_scale = float(img.rows) / input_image_size;
         float w_scale = (float)frame->width / input_image_size;
         float h_scale = (float)frame->height / input_image_size;
         result.select(1,1).mul_(w_scale);
@@ -1190,20 +1184,14 @@ static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContex
         result.select(1,4).mul_(h_scale);
         auto result_data = result.accessor<float, 2>();
         for (int i = 0; i < result.size(0) ; i++) {
-            // cv::rectangle(img, cv::Point(result_data[i][1], result_data[i][2]), cv::Point(result_data[i][3], result_data[i][4]), cv::Scalar(0, 0, 255), 1, 1, 0);
-            draw_ctx.x = (int)(result_data[i][1] + 0.5);
-            draw_ctx.y = (int)(result_data[i][2] + 0.5);
-            draw_ctx.w = (int)(result_data[i][3] - result_data[i][1] + 0.5);
-            draw_ctx.h = (int)(result_data[i][4] - result_data[i][2] + 0.5);
-
-            my_filter_frame(&draw_ctx, frame);
+            draw_ctx->x = (int)(result_data[i][1] + 0.5);
+            draw_ctx->y = (int)(result_data[i][2] + 0.5);
+            draw_ctx->w = (int)(result_data[i][3] - result_data[i][1] + 0.5);
+            draw_ctx->h = (int)(result_data[i][4] - result_data[i][2] + 0.5);
+            my_filter_frame(draw_ctx, frame);
         }
-        // cv::imwrite(szFilename, img);
+        /* write to jpg. */
     }
-
-    auto end1 = std::chrono::high_resolution_clock::now();
-    auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end1 - start1);
-    std::cout << "drawbox taken : " << duration1.count() << " ms" << endl;
 
     /* SDL_UpdateTexture */
     switch (sdl_pix_fmt) {
@@ -1640,13 +1628,9 @@ static void stream_close(VideoState *is)
         SDL_DestroyTexture(is->sub_texture);
     av_free(is);
 
-    /* free cv::Mat img */
-    // img.release();
-    // resized_img.release();
-    // img_float.release();
-    /* free frameRGB */
     av_free(buffer);
     av_frame_free(&frameRGB);
+    delete draw_ctx;
 }
 
 static void do_exit(VideoState *is)
@@ -4144,17 +4128,6 @@ int main(int argc, char **argv)
     net.to(device);
     torch::NoGradGuard no_grad;
     net.eval();
-
-    /* initilize frameRGB */
-    if (frameRGB == NULL) {
-        frameRGB = av_frame_alloc();
-        frameRGB->width = input_image_size;
-        frameRGB->height = input_image_size;
-        frameRGB->format = AV_PIX_FMT_RGB24;
-        numBytes = avpicture_get_size(frameRGB->format, frameRGB->width, frameRGB->height);
-        buffer = (uint8_t *)av_malloc(numBytes*sizeof(uint8_t));
-        avpicture_fill((AVPicture *)frameRGB, buffer, frameRGB->format, frameRGB->width, frameRGB->height);
-    }
 
     event_loop(is);
 
