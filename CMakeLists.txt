@@ -8,18 +8,22 @@ find_package(SDL2 REQUIRED)
 include_directories(${SDL2_INCLUDE_DIRS})
 
 # FFmpeg source
-set(MY_LIBRARY ~/ffmpeg-4.3.1)
-include_directories(${MY_LIBRARY})
+set(FFMPEG_SOURCE ~/ffmpeg-4.3.1)
+include_directories(${FFMPEG_SOURCE})
 
-# config.h
-set(MY_BUILD_LIBRARY ~/ffmpeg-4.3.1/build)
-include_directories(${MY_BUILD_LIBRARY})
+# FFmpeg build
+set(FFMPEG_BUILD ~/ffmpeg-4.3.1/build)
+include_directories(${FFMPEG_BUILD})
 
-# set(Torch_DIR ~/libtorch-1.0.0)
-find_package(Torch REQUIRED PATHS ~/libtorch-1.7.1)
+link_directories(${FFMPEG_BUILD}/libavcodec)
+link_directories(${FFMPEG_BUILD}/libavdevice)
+link_directories(${FFMPEG_BUILD}/libavfilter)
+link_directories(${FFMPEG_BUILD}/libavforamt)
+link_directories(${FFMPEG_BUILD}/libavutil)
+link_directories(${FFMPEG_BUILD}/libswresample)
+link_directories(${FFMPEG_BUILD}/libswscale)
 
-# find_library(FFMPEG_LIBS avcodec)
-# message("FFMPEG_LIBS: ${FFMPEG_LIBS}")
+find_package(Torch REQUIRED PATHS ~/libtorch-1.8.1)
 
 set(CMAKE_CXX_FLAGS   "-fpermissive -w")
 
@@ -27,7 +31,6 @@ aux_source_directory(. DIR_SRCS)
 
 add_executable(myplay ${DIR_SRCS})
 
-# target_link_libraries(myplay "${TORCH_LIBRARIES}" "${OpenCV_LIBS}")
 target_link_libraries(myplay 
                      ${OpenCV_LIBS}
                      ${TORCH_LIBRARIES}
