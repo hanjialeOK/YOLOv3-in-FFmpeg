@@ -1,7 +1,4 @@
 .vscode
 build
-models
-models/
+models/*.weights
 examples
-video/
-videos
