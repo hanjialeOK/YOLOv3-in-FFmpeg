@@ -23,17 +23,23 @@ I am testing this project on a GPU machine now.
 - FFmpeg == 4.3.1
 - OpenCV >= 3.0 (which is necessary in master, not filter)
 
+## Warning
+
+- FFplay works bad on remote desktop connections. So if you install this project on your remote computer, you might not get a satisfied result unless your remote computer is exactly besides you.
+- Strongly suggest you work on a GPU machine with cuda. I got only 1 fps on my CPU machine.
+
 ## Installation
-
-### SDL2
-
-```c
-sudo apt install libsdl2-dev
-```
 
 ### OpenCV
 
 Follow the [Installation in Linux](https://docs.opencv.org/3.4.13/d7/d9f/tutorial_linux_install.html). If you are going to use filter, skip this step.
+
+### SDL2 & yasm
+
+```c
+sudo apt install libsdl2-dev
+sudo apt install yasm
+```
 
 ### FFmpeg-4.3.1
 
