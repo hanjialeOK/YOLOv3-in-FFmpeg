@@ -11,7 +11,7 @@ I am testing this project on a GPU machine now.
 
 ## Branches
 
-- **master** - Use OpenCV to normallize data(0~255->0~1) and draw recangle for each detected object.
+- **master** - Use OpenCV to normallize data (from 0-255 to 0-1) and draw recangle for each detected object.
 - **filter** - Use Torch to normalize data, while drawing recangle is implemented completely by ffplay itself. OpenCV is removed.
 
 ## Requirements
