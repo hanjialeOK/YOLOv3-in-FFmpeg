@@ -7,6 +7,8 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 find_package(SDL2 REQUIRED)
 include_directories(${SDL2_INCLUDE_DIRS})
 
+find_package(Torch REQUIRED PATHS ~/libtorch-1.8.1)
+
 # FFmpeg source
 set(FFMPEG_SOURCE ~/ffmpeg-4.3.1)
 include_directories(${FFMPEG_SOURCE})
@@ -23,15 +25,14 @@ link_directories(${FFMPEG_BUILD}/libavutil)
 link_directories(${FFMPEG_BUILD}/libswresample)
 link_directories(${FFMPEG_BUILD}/libswscale)
 
-find_package(Torch REQUIRED PATHS ~/libtorch-1.8.1)
-
 set(CMAKE_CXX_FLAGS   "-fpermissive -w -g")
+set(CMAKE_INSTALL_PREFIX /usr/local)
 
 aux_source_directory(. DIR_SRCS)
 
 add_executable(myplay ${DIR_SRCS})
 
-target_link_libraries(myplay 
+target_link_libraries(myplay
                      ${OpenCV_LIBS}
                      ${TORCH_LIBRARIES}
                      -lavcodec
@@ -47,8 +48,7 @@ target_link_libraries(myplay
 
 set_property(TARGET myplay PROPERTY CXX_STANDARD 14)
 
-SET(CMAKE_INSTALL_PREFIX /usr/local)
-
+# install target
 install(TARGETS myplay
         RUNTIME DESTINATION bin  # 可执行文件安装路径
         )
@@ -63,4 +63,3 @@ if(NOT TARGET uninstall)
   add_custom_target(uninstall
     COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
 endif()
-
