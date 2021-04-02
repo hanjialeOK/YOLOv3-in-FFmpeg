@@ -2,12 +2,12 @@
 
 ## Introduction
 
-I am trying to put YOLOv3 in ffplay, a player of FFmpeg, and compile them to myplay. So that it could dectect objects in videos.  
-`Darknet.cpp` and `Darknet.h` are files of YOLOv3 which come from [libtorch-yolov3](https://github.com/walktree/libtorch-yolov3). Another three source files come from FFmpeg-4.3.1/fftools, I modified them for a little bit.
+I am trying to put YOLOv3 in ffplay, a sample player of FFmpeg, and compile them to myplay. So that it could dectect objects in videos.  
+`Darknet.cpp` and `Darknet.h` are files of YOLOv3 which come from [libtorch-yolov3](https://github.com/walktree/libtorch-yolov3). Another three source files come from FFmpeg-4.3.1/fftools, I modified them a little bit.
 
 ## What I am doing
 
-I am testing this project on a GPU machine now.
+I have implemented this project on a GPU machine with nvidia-driver-460 and cuda-11.0, it can be up to 30~35 fps.
 
 ## Branches
 
@@ -20,7 +20,7 @@ I am testing this project on a GPU machine now.
 - GNU >= 5.4.0
 - LibTorch >= 1.5.0
 - SDL2 >= 2.0
-- FFmpeg == 4.3.1
+- FFmpeg >= 4.3.1
 - OpenCV >= 3.0 (which is necessary in master, not filter)
 
 ## Warning
@@ -46,34 +46,40 @@ sudo apt install yasm
 ```c
 wget http://ffmpeg.org/releases/ffmpeg-4.3.1.tar.gz
 tar -zxf ffmpeg-4.3.1.tar.gz
-cd ffmpeg
+cd ffmpeg-4.3.1
 mkdir build && cd build
 // if cpu
-./../configure --prefix=/usr/local --enable-shared
-// if gpu
-./../configure --prefix=/usr/local --enable-shared --enable-cuda-nvcc
+./../configure --prefix=/usr/local/ffmpeg --enable-shared
 make
 sudo make install
 
-export LIBRARY_PATH=/usr/local/lib/:$LIBRARY_PATH
-export LD_LIBRARY_PATH=/usr/local/lib/:$LD_LIBRARY_PATH
+// set environment variables
+vim ~/.bashrc
+// add them to file
+export PATH=/usr/local/ffmpeg/bin:$PATH
+export LIBRARY_PATH=/usr/local/ffmpeg/lib:$LIBRARY_PATH
+export LD_LIBRARY_PATH=/usr/local/ffmpeg/lib:$LD_LIBRARY_PATH
+// source to make it work
+source ~/.bashrc
 ```
 
 ### LibToch
 
 ```c
-// if cpu
+// if only cpu
 wget https://download.pytorch.org/libtorch/cpu/libtorch-shared-with-deps-1.8.1%2Bcpu.zip
-// if gpu
+// if gpu with nvidia driver and cuda
 wget https://download.pytorch.org/libtorch/cu102/libtorch-shared-with-deps-1.8.1.zip
 wget https://download.pytorch.org/libtorch/cu111/libtorch-shared-with-deps-1.8.1%2Bcu111.zip
 ```
+
+if you want to download previous versions, click [here](https://blog.csdn.net/weixin_43742643/article/details/114156298).
 
 ### Clone
 
 ```c
 git clone git@github.com:Nugurii/YOLOv3-in-FFmpeg.git MYPLAY-ROOT
-// if just need filter
+// if you just need filter
 git clone -b filter git@github.com:Nugurii/YOLOv3-in-FFmpeg.git MYPLAY-ROOT
 ```
 
@@ -108,4 +114,8 @@ make
 // if gpu, it's better to test on videos of which fps is high.
 ./myplay -v quiet ../videos/fpx.mp4
 ./myplay -v quiet ../videos/fpx.gif
+// now you can install it(only excuable file will be installed in /usr/local/bin).
+sudo make install
+// uninstall 
+sudo make uninstall
 ```
