@@ -28,7 +28,7 @@
 #include <torch/torch.h>
 #include <chrono>
 #include <time.h>
-#include "Darknet.h"
+#include "YOLOv3/Darknet.h"
 
 #include "config.h"
 #include <inttypes.h>
