@@ -63,14 +63,20 @@ export LD_LIBRARY_PATH=/usr/local/ffmpeg/lib:$LD_LIBRARY_PATH
 source ~/.bashrc
 ```
 
+### nvidia-460 + cuda-11.0
+
+If you have a GPU, follow this [tutorial](https://blog.csdn.net/weixin_43742643/article/details/115355545).   
+If not, skip this step.
+
 ### LibToch
 
 ```c
 // if only cpu
-wget https://download.pytorch.org/libtorch/cpu/libtorch-shared-with-deps-1.8.1%2Bcpu.zip
+wget https://download.pytorch.org/libtorch/cpu/libtorch-shared-with-deps-1.7.1%2Bcpu.zip
 // if gpu with nvidia driver and cuda
-wget https://download.pytorch.org/libtorch/cu102/libtorch-shared-with-deps-1.8.1.zip
-wget https://download.pytorch.org/libtorch/cu111/libtorch-shared-with-deps-1.8.1%2Bcu111.zip
+wget https://download.pytorch.org/libtorch/cu110/libtorch-shared-with-deps-1.7.1%2Bcu110.zip
+unzip libtorch-shared-with-deps-1.7.1+cu110.zip
+export Torch_DIR=/path/to/libtorch
 ```
 
 if you want to download previous versions, click [here](https://blog.csdn.net/weixin_43742643/article/details/114156298).
@@ -78,17 +84,18 @@ if you want to download previous versions, click [here](https://blog.csdn.net/we
 ### Clone
 
 ```c
-git clone git@github.com:Nugurii/YOLOv3-in-FFmpeg.git MYPLAY-ROOT
+git clone git@github.com:hanjialeOK/YOLOv3-in-FFmpeg.git MYPLAY-ROOT
 // if you just need filter
-git clone -b filter git@github.com:Nugurii/YOLOv3-in-FFmpeg.git MYPLAY-ROOT
+git clone -b filter git@github.com:hanjialeOK/YOLOv3-in-FFmpeg.git MYPLAY-ROOT
 ```
 
 ### Download weights
 
 ```c
 cd MYPLAY-ROOT/models
+// you just need to download yolov3.weights, yolov3-tiny.weights is not necessary because it works bad.
 wget https://pjreddie.com/media/files/yolov3.weights
-wget https://pjreddie.com/media/files/yolov3-tiny.weights
+// wget https://pjreddie.com/media/files/yolov3-tiny.weights
 ```
 
 ### Configuration
