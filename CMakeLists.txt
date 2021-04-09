@@ -5,21 +5,13 @@ find_package(OpenCV REQUIRED)
 
 find_package(SDL2 REQUIRED)
 
-find_package(Torch REQUIRED PATHS ~/libtorch-1.8.1)
+find_package(Torch REQUIRED)
 
 # FFmpeg source
 set(FFMPEG_SOURCE ~/ffmpeg-4.3.1)
 
 # FFmpeg build
 set(FFMPEG_BUILD ~/ffmpeg-4.3.1/build)
-
-# link_directories(${FFMPEG_BUILD}/libavcodec)
-# link_directories(${FFMPEG_BUILD}/libavdevice)
-# link_directories(${FFMPEG_BUILD}/libavfilter)
-# link_directories(${FFMPEG_BUILD}/libavformat)
-# link_directories(${FFMPEG_BUILD}/libavutil)
-# link_directories(${FFMPEG_BUILD}/libswresample)
-# link_directories(${FFMPEG_BUILD}/libswscale)
 
 set(CMAKE_CXX_FLAGS   "-fpermissive -w -g")
 set(CMAKE_INSTALL_PREFIX /usr/local)
