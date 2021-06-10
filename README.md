@@ -2,17 +2,23 @@
 
 ## Introduction
 
-I am trying to put YOLOv3 in ffplay, a sample player of FFmpeg, and compile them to myplay. So that it could dectect objects in videos.  
-`Darknet.cpp` and `Darknet.h` are files of YOLOv3 which come from [libtorch-yolov3](https://github.com/walktree/libtorch-yolov3). Another three source files come from FFmpeg-4.3.1/fftools, I modified them a little bit.
-
-## What I am doing
-
-I have implemented this project on a GPU machine with nvidia-driver-460 and cuda-11.0, it can be up to 30~35 fps.
+I integrate YOLOv3 into ffplay so that it could dectect objects in videos.  
+`Darknet.cpp` and `Darknet.h` come from [libtorch-yolov3](https://github.com/walktree/libtorch-yolov3). `cmdutils.c`, `cmdutils.h` and `ffplay.c` come from FFmpeg-4.3.1/fftools and I change `ffplay.c` to `ffplay.cpp`. This project is based on [myplay](https://github.com/hanjialeOK/myplay).
 
 ## Branches
 
-- **master** - Use OpenCV to normalize data (from 0-255 to 0-1) and draw recangle for each detected object.
-- **filter** - Use Torch to normalize data, while drawing recangle is implemented completely by ffplay itself. OpenCV is removed.
+- **master** - Use OpenCV to scale and normalize (from 0-255 to 0-1) and draw recangle.
+- **filter** - Totally ffplay. OpenCV is removed.
+
+## Figure Illustration
+
+This figure shows how ffplay works. I put YOLOv3 into upload_texture().
+
+![ffplay](./figures/yolov3.svg)
+
+This figure shows the conversion process in upload_texture().
+
+![conversion](./figures/flow.svg)
 
 ## Requirements
 
@@ -20,19 +26,14 @@ I have implemented this project on a GPU machine with nvidia-driver-460 and cuda
 - GNU >= 5.4.0
 - LibTorch >= 1.5.0
 - SDL2 >= 2.0
-- FFmpeg >= 4.3.1
+- FFmpeg == 4.3.1 or 4.3.2
 - OpenCV >= 3.0 (which is necessary in master, not filter)
-
-## Warning
-
-- FFplay works bad on remote desktop connections. So if you install this project on your remote computer, you might not get a satisfied result unless your remote computer is exactly besides you.
-- Strongly suggest you work on a GPU machine with cuda. I got only 1 fps on my CPU machine.
 
 ## Installation
 
 ### OpenCV
 
-Follow the [Installation in Linux](https://docs.opencv.org/3.4.13/d7/d9f/tutorial_linux_install.html). If you are going to use filter, skip this step.
+Follow the [Installation in Linux](https://docs.opencv.org/3.4.13/d7/d9f/tutorial_linux_install.html). If you are going to use filter, skip.
 
 ### SDL2 & yasm
 
@@ -63,67 +64,69 @@ export LD_LIBRARY_PATH=/usr/local/ffmpeg/lib:$LD_LIBRARY_PATH
 source ~/.bashrc
 ```
 
-### nvidia-460 + cuda-11.0
+### nvidia-460 + cuda-11.2
 
 If you have a GPU, follow this [tutorial](https://blog.csdn.net/weixin_43742643/article/details/115355545).   
-If not, skip this step.
+If not, skip.
 
 ### LibToch
 
 ```c
-// if only cpu
+// if cpu
 wget https://download.pytorch.org/libtorch/cpu/libtorch-shared-with-deps-1.7.1%2Bcpu.zip
-// if gpu with nvidia driver and cuda
+// if gpu
 wget https://download.pytorch.org/libtorch/cu110/libtorch-shared-with-deps-1.7.1%2Bcu110.zip
 unzip libtorch-shared-with-deps-1.7.1+cu110.zip
-export TORCH_DIR=/path/to/libtorch
+export Torch_DIR=/path/to/libtorch
 export LD_LIBRARY_PATH=/path/to/libtorch/lib:$LD_LIBRARY_PATH
 ```
 
 if you want to download previous versions, click [here](https://blog.csdn.net/weixin_43742643/article/details/114156298).
 
-### Clone
+### Clone this repo
 
 ```c
-git clone git@github.com:hanjialeOK/YOLOv3-in-FFmpeg.git MYPLAY-ROOT
+git clone git@github.com:hanjialeOK/YOLOv3-in-FFmpeg.git
 // if you just need filter
-git clone -b filter git@github.com:hanjialeOK/YOLOv3-in-FFmpeg.git MYPLAY-ROOT
+git clone -b filter git@github.com:hanjialeOK/YOLOv3-in-FFmpeg.git
 ```
 
 ### Download weights
 
 ```c
-cd MYPLAY-ROOT/models
-// you just need to download yolov3.weights, yolov3-tiny.weights is not necessary because it works bad.
+cd YOLOv3-in-FFmpeg/models
 wget https://pjreddie.com/media/files/yolov3.weights
-// wget https://pjreddie.com/media/files/yolov3-tiny.weights
+wget https://pjreddie.com/media/files/yolov3-tiny.weights
 ```
 
 ### Configuration
 
 Modify CMakeLists.txt according to your own condition.
 
-- set `FFMPEG_SOURCE` path/to/your/FFmpeg-4.3.1/source
-- set `FFMPEG_BUILD` path/to/where/you/build/FFmpeg-4.3.1
-- set `Torch PATHS` path/to/your/libtorch
+- set `FFMPEG_SOURCE` path/to/ffmpeg-4.3.1
 
-## compile & run
+    ```c
+    set(FFMPEG_SOURCE ~/ffmpeg-4.3.1)
+    ```
+
+- set `FFMPEG_BUILD` path/to/where/you/build/FFmpeg-4.3.1
+
+    ```c
+    set(FFMPEG_SOURCE ~/ffmpeg-4.3.1/build)
+    ```
+
+- if libtorch could not be found.
+
+    ```c
+    find_package(Torch REQUIRED PATHS path/to/your/libtorch)
+    ```
+
+## Compile & Run
 
 ```c
-cd MYPLAY-ROOT
+cd YOLOv3-in-FFmpeg
 mkdir build && cd build
 cmake ..
 make
-// if cpu, it's better to test on videos of which fps is low.
-./myplay -v quiet ../videos/fpx_r0.5.mp4
-./myplay -v quiet ../videos/fpx_r0.5.gif
-./myplay -v quiet ../videos/fpx_r1.mp4
-./myplay -v quiet ../videos/fpx_r1.gif
-// if gpu, it's better to test on videos of which fps is high.
 ./myplay -v quiet ../videos/fpx.mp4
-./myplay -v quiet ../videos/fpx.gif
-// now you can install it(only excuable file will be installed in /usr/local/bin).
-sudo make install
-// uninstall 
-sudo make uninstall
 ```
