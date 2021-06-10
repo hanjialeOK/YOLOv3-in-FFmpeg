@@ -77,8 +77,12 @@ wget https://download.pytorch.org/libtorch/cpu/libtorch-shared-with-deps-1.7.1%2
 // if gpu
 wget https://download.pytorch.org/libtorch/cu110/libtorch-shared-with-deps-1.7.1%2Bcu110.zip
 unzip libtorch-shared-with-deps-1.7.1+cu110.zip
+vim ~/.bashrc
+// add them to file
 export Torch_DIR=/path/to/libtorch
 export LD_LIBRARY_PATH=/path/to/libtorch/lib:$LD_LIBRARY_PATH
+// make it work
+source ~/.bashrc
 ```
 
 if you want to download previous versions, click [here](https://blog.csdn.net/weixin_43742643/article/details/114156298).
@@ -96,7 +100,6 @@ git clone -b filter git@github.com:hanjialeOK/YOLOv3-in-FFmpeg.git
 ```c
 cd YOLOv3-in-FFmpeg/models
 wget https://pjreddie.com/media/files/yolov3.weights
-wget https://pjreddie.com/media/files/yolov3-tiny.weights
 ```
 
 ### Configuration
