@@ -23,11 +23,6 @@
  * simple media player based on the FFmpeg libraries
  */
 
-#include <torch/torch.h>
-#include <chrono>
-#include <time.h>
-#include "YOLOv3/Darknet.h"
-
 #include "config.h"
 #include <inttypes.h>
 #include <math.h>
@@ -65,15 +60,14 @@ extern "C"
 #include "cmdutils.h"
 }
 
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_thread.h>
-
-// #include "cmdutils.h"
+#include <SDL.h>
+#include <SDL_thread.h>
+#include <torch/torch.h>
+#include <chrono>
+#include <time.h>
+#include "YOLOv3/Darknet.h"
 
 #include <assert.h>
-
-// using namespace std;
-// using namespace std::chrono;
 
 const char program_name[] = "ffplay";
 const int program_birth_year = 2003;
@@ -1167,13 +1161,13 @@ static int my_upload_texture(SDL_Texture **tex, AVFrame *frame, struct SwsContex
     std::cout << "inference taken : " << duration.count() << " ms" << endl;
 
     if (result.dim() == 1) {
-        std::cout << "no object found" << endl;
+        std::cout << "no object found" << std::endl;
     }
     else {
         char szFilename[32];
         sprintf(szFilename, "frame%d-detect.jpg", cnt++);
         int obj_num = result.size(0);
-        std::cout << obj_num << " objects found" << endl;
+        std::cout << obj_num << " objects found" << std::endl;
         float w_scale = (float)frame->width / input_image_size;
         float h_scale = (float)frame->height / input_image_size;
         result.select(1,1).mul_(w_scale);
